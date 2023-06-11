@@ -12,18 +12,32 @@ class AStar:
     parentnode: dict[str, str] = {}
     nbr: dict[str, list[str]] = {}
     edgecost: dict[str, float] = {}
+    obst: list[dict[str, float]] = []
 
-    def __init__(self, nodetxt: list[str], edgetxt: list[str]):
-        print("AStar.__init__")
-        print("nodetxt:", nodetxt)
-        print("edgetxt:", edgetxt)
+    verbosity: int = 0
+
+    def __init__(self, nodetxt: list[str], edgetxt: list[str], obsttxt: list[str]=None, verbosity: int = 0):
+        self.verbosity = verbosity
+        if self.verbosity > 1:
+            print(f"AStar.__init__")
+        if self.verbosity > 2:
+            print("nodetxt:", nodetxt)
+            print("edgetxt:", edgetxt)
+            print("obsttxt:", obsttxt)
         if (len(nodetxt) == 1):
             nodetxt = self.FileToList(nodetxt[0])
         if (len(edgetxt) == 1):
             edgetxt = self.FileToList(edgetxt[0])
+        if (obsttxt and len(obsttxt) == 1):
+            obsttxt = self.FileToList(obsttxt[0])
 
-        print("There are", len(nodetxt), "nodes")
-        print("There are", len(edgetxt), "edges")
+        if self.verbosity > 0:
+            print(f"There are {len(nodetxt)} nodes lines and {len(edgetxt)} edge lines")
+            if obsttxt:
+                print(f"There are {len(obsttxt)} obstacle lines")
+            else:
+                print(f"No obstacle file")
+           
         for line in nodetxt:
             if line[0] == "#":
                 continue
@@ -36,8 +50,10 @@ class AStar:
                                 "tent_tot_cost": float(cst)}
             self.nbr[n] = []
             self.nodestat[n] = "unvisited"
-        # print("nodedict", self.nodedict)
-        # print("nbr", self.nbr)
+
+        if self.verbosity > 1:
+            print("nodedict", self.nodedict)
+            print("nbr", self.nbr)
 
         mincost: float = 1e6
         maxcost: float = -1e6
@@ -49,10 +65,10 @@ class AStar:
                 continue
             n1, n2, cost = line.split(",")
             if n1 not in self.nbr:
-                print(f"Error in edgelist: ""{n1}"" is not a node")
+                print(f'Error in edgelist: "{n1}" is not a node')
                 continue
             if n2 not in self.nbr:
-                print(f"Error in edgelist: ""{n2}"" is not a node")
+                print(f'Error in edgelist: "{n2}" is not a node')
                 continue
             self.nbr[n1].append(n2)
             self.nbr[n2].append(n1)
@@ -63,8 +79,25 @@ class AStar:
             self.edgecost[f"{n1}:{n2}"] = fcost
             self.edgecost[f"{n2}:{n1}"] = fcost
         nedges = max(1, len(self.edgecost))
-        print(f"mincost:{mincost:.3f} maxcost:{maxcost:.3f} avgcost:{sumcost/nedges:.3f}")
+        print(f"edge costs min:{mincost:.3f} max:{maxcost:.3f} avg:{sumcost/nedges:.3f}")
         # print("edgecost",edgecost)
+
+        if obsttxt:
+            for line in obsttxt:
+                if line[0] == "#":
+                    continue
+                if len(line) <= 1:
+                    continue
+                x, y, diam = line.split(",")
+                self.obst.append({"x": float(x),
+                                  "y": float(y),
+                                  "diam": float(diam)})
+
+        if self.verbosity > 1:
+            print("obst", self.obst)
+
+        if self.verbosity > 0:
+            print(f"Astar has {len(self.nodedict)} nodes and {len(self.edgecost)} edges and {len(self.obst)} obstacles")
 
     def FileToList(self, fname: str) -> list[str]:
         if (os.path.isfile(fname)):
@@ -140,6 +173,7 @@ class AStar:
             nodename = n.replace(".000000", "")  # remove trailing zeros if they are in the label
             ax.text(x, y, nodename,
                     fontsize=10, horizontalalignment='center', verticalalignment='center', color='white')
+            # print("plt n", n, "x", x, "y", y)
 
         # Now add the links between the nodes with cost
         for e in self.edgecost.keys():
@@ -156,6 +190,12 @@ class AStar:
             ax.text(xmid, ymid, f"{self.edgecost[e]:.3f}",
                     fontsize=10, horizontalalignment='center', verticalalignment='center')
 
+        for o in self.obst:
+            x = o["x"]
+            y = o["y"]
+            diam = o["diam"]
+            ax.add_patch(patches.Circle((x, y), diam/2, color='grey'))
+            
         plt.draw()
 
     def HightlightNodesInPath(self, path: list[str], cost, actionline: str):
@@ -198,11 +238,13 @@ class AStar:
             if ntentcost < self.nodedict[self.openlist[i]]["tent_tot_cost"]:
                 self.openlist.insert(i, n)
                 self.nodestat[n] = "open"
-                # print(f"openlist:{openlist} {ntentcost}")
+                if self.verbosity > 2:
+                    print(f"added {n} to openlist:{self.openlist} {ntentcost}")
                 return
         self.openlist.append(n)
         self.nodestat[n] = "open"
-        # print(f"openlist:{openlist} {ntentcost}")
+        if self.verbosity > 2:
+            print(f"added {n} to openlist:{self.openlist} {ntentcost}")
 
     def AddNodeToClosedList(self, n: str):
         self.closedlist.append(n)
@@ -248,10 +290,10 @@ class AStar:
         if stepplot:
             finplot = False
         if start not in self.nodedict.keys():
-            print(f"Error Start node ""{start}"" not in nodedict")
+            print(f'Error Start node "{start}" not in nodedict')
             return []
         if goal not in self.nodedict.keys():
-            print(f"Error Goal node ""{goal}"" not in nodedict")
+            print(f'Error Goal node "{goal}" not in nodedict')
             return []
 
         if stepplot or finplot:
@@ -281,6 +323,9 @@ class AStar:
             if stepplot:
                 self.DoSubPlot(n, f"added {n} to closed")
 
+        print("No path found")
+        if stepplot or finplot:
+            self.DoSubPlot(n, f"No Solution Found", isSubPlot=not finplot)
         return []
 
     def AstarCost(self, path) -> float:
@@ -289,7 +334,5 @@ class AStar:
         for i in range(len(path)-1):
             n1 = path[i]
             n2 = path[i+1]
-            # print(self.edgecost[f"{n1}:{n2}"])
             cost += self.edgecost[f"{n1}:{n2}"]
         return cost
-

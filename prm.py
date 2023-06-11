@@ -1,285 +1,300 @@
-import numpy
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-
-# flake8: noqa
-
-fnamenodes = ""
-fnameedges = ""
-firstnode = "1"
-targetnode = "6"
-
-astarscene = "PRM2"
-astarscene = "Scene5"
-astarscene = "PRM"
-astarscene = ""
-astarscene = "Scene5"
-dname = ""
+import astar
+import argparse
+import random
+import math
+import os
+from shapely.geometry import LineString
+from shapely.geometry import Point
 
 
-if scene=="PRM":
-    dname  = "planning_coursera"
-    obstnodes = "obstacles.csv"
-    fnamenodes = "nodes.csv"
-    fnameedges = "edges.csv"
-    firstnode = "1"
-    targetnode = "12"
+parser = argparse.ArgumentParser(prog='PrmMain.py',
+                                 description='Calculates PRM path around obstacles',
+                                 epilog='Text at the bottom of help')
 
-if obstnodes!="":
-    obsttxt = open(f"{dname}/{obstnodes}").readlines()
-    obstnodes = []
-    for l in obsttxt:
-        if l[0]=="#": continue
-        if len(l)<=1: continue
-        obstnodes.append(l.replace("\n",""))
-    print("obstnodes",obstnodes)
-
-nodedict:dict[str,dict[str,float]]= {} 
-nodestat:dict[str,str] = {}
-parentnode:dict[str,str] = {}
-nbr : dict[str,list[str]] = {}
-edgecost : dict[str,float] = {}
-
-def Initialize():
-    global nodetxt, edgetxt, nodedict, edgecost, nbr
-    for l in nodetxt:
-        if l[0]=="#": continue
-        if len(l)<=1: continue
-        n,xv,yv,cst = l.split(",")
-        nodedict[n] = {"x":float(xv),"y":float(yv),"cost":float(cst),"tent_tot_cost":float(cst)}
-        nbr[n] = []
-        nodestat[n] = "unvisited"
-    # print("node",node)
-    # print("nbr",nbr)
-
-    mincost = 1e6
-    maxcost = -1e6
-    sumcost = 0
-    for l in edgetxt:
-        if l[0]=="#": continue
-        if len(l)<=1: continue
-        n1,n2,cost = l.split(",")
-        nbr[n1].append(n2)
-        nbr[n2].append(n1)
-        if float(cost) < mincost: mincost = float(cost)
-        if float(cost) > maxcost: maxcost = float(cost)
-        sumcost += float(cost)
-        edgecost[f"{n1}:{n2}"] = float(cost)
-        edgecost[f"{n2}:{n1}"] = float(cost)
-    print(f"mincost:{mincost:.3f} maxcost:{maxcost:.3f} avgcost:{sumcost/len(edgecost):.3f}")
-    # print("edgecost",edgecost)
-
-def Distance(n1:str,n2:str):
-    global nodedict
-    x1 = nodedict[n1]["x"]
-    y1 = nodedict[n1]["y"]
-    x2 = nodedict[n2]["x"]
-    y2 = nodedict[n2]["y"]
-    return numpy.sqrt((x1-x2)**2 + (y1-y2)**2)  
-
-def CheckDistances():
-    for e in edgecost.keys():
-        n1,n2 = e.split(":")
-        dist = Distance(n1,n2)
-        if dist > edgecost[e]:
-            print(f"CheckDist error dist>edgcost: {n1} {n2} {dist:.1f} {edgecost[e]}")
-    
-
-Initialize()
-# CheckDistances()
-
-def GetNodeColor(n:str):
-    # Named colors: https://matplotlib.org/stable/gallery/color/named_colors.html
-    if nodestat[n]=="open": return "lightseagreen"
-    if nodestat[n]=="closed": return "darkgreen"
-    if nodestat[n]=="unvisited": return "blue"
-    return "black"
-
-def PlotNodesWithNames(iplt:int):
-    
-    # Plot the nodes using matplotlib
-
-    global nodedict,scale,astarscene,nrows,ncols,fig
-
-    ax = fig.add_subplot(nrows,ncols,iplt, aspect='equal') # type: ignore
-
-    xmin = 1e6
-    xmax = -1e6
-    ymin = 1e6
-    ymax = -1e6
-    for n in nodedict.keys():
-        if nodedict[n]["x"] < xmin: xmin = nodedict[n]["x"]
-        if nodedict[n]["x"] > xmax: xmax = nodedict[n]["x"]
-        if nodedict[n]["y"] < ymin: ymin = nodedict[n]["y"]
-        if nodedict[n]["y"] > ymax: ymax = nodedict[n]["y"]
-
-    borderx = 0.1*(xmax-xmin)
-    bordery = 0.1*(ymax-ymin)
-    ax.set_xlim(xmin-borderx,xmax+borderx)
-    ax.set_ylim(ymin-bordery,ymax+bordery)
-    scale =(xmax-xmin) / 2
-    ax.grid(True, which='both')
-    for n in nodedict.keys():
-        x = nodedict[n]["x"]
-        y = nodedict[n]["y"]
-        clr = GetNodeColor(n)
-        ax.add_patch(patches.Circle((x,y), scale*0.07, color=clr))
-        nodename = n.replace(".000000","") # remove trailing zeros if they are in the label
-        ax.text(x,y,nodename,fontsize=10,horizontalalignment='center',verticalalignment='center',color='white')
-
-    # Now add the links between the nodes with cost 
-    for e in edgecost.keys():
-        n1,n2 = e.split(":")
-        x1 = nodedict[n1]["x"]
-        y1 = nodedict[n1]["y"]
-        x2 = nodedict[n2]["x"]
-        y2 = nodedict[n2]["y"]
-        ax.plot([x1,x2],[y1,y2],color='green',linewidth=1)
-        # now calculate the midpoint and add the cost
-        xmid = (x1+x2)/2
-        ymid = (y1+y2)/2
-        ax.text(xmid,ymid,f"{edgecost[e]:.3f}",fontsize=10,horizontalalignment='center',verticalalignment='center')
-
-    plt.draw()
-
-def HightlightNodesInPath(path: list[str],cost,actionline:str):
-
-    # Highlight the path we found
-    global nodedict
-    import matplotlib.patches as patches    
-    ax = plt.gca()
-    tit = "-".join(path) + f" cost:{cost:.3f}\n{actionline}"
-    ax.set_title(tit)
-    # ax.title = tit
-    for n in path:
-        x = nodedict[n]["x"]
-        y = nodedict[n]["y"]
-        ax.add_patch(patches.Circle((x,y), scale*0.07, edgecolor='red', lw=4, fill=False))
-
-fig = None
-iplot:int = 1
-nrows:int = 3
-ncols:int = 6
-
-def setupPlot(tit:str):
-    global nodedict, iplot, nrows, ncols, fig
-    iplot = 1
-    fig = plt.figure()
-    fig.suptitle(tit)    
-
-def doSubPlot(n:str,actionline:str):
-    global nodedict, iplot, nrows, ncols
-    PlotNodesWithNames(iplot)
-    curp = getParentList(n)
-    curp.reverse()
-    cost = astarcost(curp)
-    iplot += 1
-    HightlightNodesInPath(curp,cost,actionline)
+parser.add_argument('-n', '--nodes', type=str, default="nodes.csv",
+                    help='Name of the nodes file')
+parser.add_argument('-e', '--edges', type=str, default="edges.csv",
+                    help='Name of the edges file')
+parser.add_argument('-o', '--obstacles', type=str, default="obstacles.csv",
+                    help='Name of the edges file')
+parser.add_argument('-f', '--firstnode', type=str, default="1",
+                    help='Name of the first node')
+parser.add_argument('-t', '--targetnode', type=str, default="2",
+                    help='Name of the target node')
+parser.add_argument('-s', '--scene', type=str, default="PRM Planner",
+                    help='Name of the scene')
+parser.add_argument('-d', '--directory', type=str, default="planning_coursera",
+                    help='Name of the directory')
+parser.add_argument('-fp', '--finplot', action='store_true',
+                    help='Do a plot of final path')
+parser.add_argument('-sp', '--stepplot', action='store_true',
+                    help='Create a plot that shows the steps to finding the final path')
+parser.add_argument('-v', '--verbose', type=int, default=0,
+                    help='Verbosity level')
+parser.add_argument('-ns', '--noseed', action='store_true',
+                    help='Do not use a random seed')
+parser.add_argument('-seed', '--seed', type=int, default=1234,
+                    help='Random seed value')
+parser.add_argument('-n2g', '--nodes_to_gen', type=int, default=10,
+                    help='PRM nodes to generate')
 
 
-    
+args = parser.parse_args()
 
-def addNodeToOpenList(n:str,openlist: list[str]):
-    global nodedict
-    ntentcost = nodedict[n]["tent_tot_cost"]
-    for i in range(len(openlist)):
-        if ntentcost < nodedict[openlist[i]]["tent_tot_cost"]:
-            openlist.insert(i,n)
-            nodestat[n] = "open"
-            # print(f"openlist:{openlist} {ntentcost}")
-            return
-    openlist.append(n)
-    nodestat[n] = "open"
-    # print(f"openlist:{openlist} {ntentcost}")
-
-def addNodeToClosedList(n:str,closedlist: list[str]):
-    closedlist.append(n)
-    nodestat[n] = "closed"
-
-def getParentList(n:str)->list[str]:
-    global nodedict,parentnode
-    rv = []
-    while n in nodedict.keys():
-        rv.append(n)
-        if n not in parentnode.keys(): break
-        n = parentnode[n]
-    return rv
-
-def getSeeminglyClosestNodeToTarget(openlist:list[str])->str:
-    global nodedict
-    if len(openlist)==1: return openlist[0]
-    mincost = 1e6
-    minnode :str = "None"
-    for n in openlist:
-        if "tent_tot_cost" not in nodedict[n].keys(): continue
-        if nodedict[n]["tent_tot_cost"] < mincost:
-            mincost = nodedict[n]["tent_tot_cost"]
-            minnode = n
-    return minnode
-
-def assignParent(n:str,parent:str,goal:str):
-    global nodedict, parentnode
-    parentnode[n] = parent
-    nodedict[n]["cost"] = nodedict[parent]["cost"] + edgecost[f"{parent}:{n}"]
-    nodedict[n]["tent_tot_cost"] = nodedict[n]["cost"] + Distance(n,goal)
+fnamenodes = args.nodes
+fnameedges = args.edges
+fnameobstacles = args.obstacles
+firstnode = args.firstnode
+targetnode = args.targetnode
+astarscene = args.scene
+dname = args.directory
+finplot = args.finplot
+stepplot = args.stepplot
+verbosity = args.verbose
+no_seed = args.noseed
+seed = args.seed
+nodes_to_gen = args.nodes_to_gen
 
 
-      
-def astar(start:str,goal:str)->list[str]:
-    global nodedict, nbr, edgecost
-    openlist = [start]
-    closedlist = []
-    setupPlot(f"A* for {astarscene}")
-    while len(openlist)>0:
-        n :str = getSeeminglyClosestNodeToTarget(openlist)
-        openlist.remove(n)
-        if n==goal:
-            rv = getParentList(n)
-            rv.reverse()
-            doSubPlot(n,f"Solution")
-            return rv
-        for n2 in nbr[n]: 
-            if n2 in closedlist: continue
-            if n2 not in openlist:
-                assignParent(n2,n,goal)
-                addNodeToOpenList(n2,openlist)
-                doSubPlot(n2,f"added {n2} to openlist")
+class PrmGen:
+
+    nodedict: dict[str, dict[str, float]] = {}
+    nodestat: dict[str, str] = {}
+    parentnode: dict[str, str] = {}
+    nbr: dict[str, list[str]] = {}
+    edgecost: dict[str, float] = {}
+    obst: list[dict[str, float]] = []
+
+    def __init__(self, nodetxt: list[str], edgetxt: list[str], obsttxt: list[str] = None,
+                 verbosity: int = 0, noseed: bool = False, seed: int = 1234):
+        self.verbosity = verbosity
+        if self.verbosity > 0:
+            print(f"AStar.__init__")
+            print("nodetxt:", nodetxt)
+            print("edgetxt:", edgetxt)
+            print("obsttxt:", obsttxt)
+        if (len(nodetxt) == 1):
+            nodetxt = self.FileToList(nodetxt[0])
+        if (len(edgetxt) == 1):
+            edgetxt = self.FileToList(edgetxt[0])
+        if (obsttxt and len(obsttxt) == 1):
+            obsttxt = self.FileToList(obsttxt[0])
+
+        if self.verbosity > 0:
+            print(f"There are {len(nodetxt)} nodes lines and {len(edgetxt)} edge lines")
+            if obsttxt:
+                print(f"There are {len(obsttxt)} obstacle lines")
             else:
-                # if the nodes is in the openlist then we might need to reset the costs if we found a better path
-                if nodedict[n2]["cost"] > nodedict[n]["cost"] + edgecost[f"{n}:{n2}"]:
-                    assignParent(n2,n,goal)
-        addNodeToClosedList(n,closedlist)
-        doSubPlot(n,f"added {n} to closed")
+                print(f"No obstacle file")
 
-    return []
+        for line in nodetxt:
+            if line[0] == "#":
+                continue
+            if len(line) <= 1:
+                continue
+            n, xv, yv, cst = line.split(",")
+            self.nodedict[n] = {"x": float(xv),
+                                "y": float(yv),
+                                "id": n,
+                                "cost": float(cst),
+                                "tent_tot_cost": float(cst)}
+            self.nbr[n] = []
+            self.nodestat[n] = "unvisited"
 
-def astarcost(path)->float:
-    global nodedict, edgecost
-    cost = 0
-    for i in range(len(path)-1):
-        n1 = path[i]
-        n2 = path[i+1]
-        print(edgecost[f"{n1}:{n2}"])
-        cost += edgecost[f"{n1}:{n2}"]
-    return cost
+        if self.verbosity > 1:
+            print("nodedict", self.nodedict)
+            print("nbr", self.nbr)
+
+        mincost: float = 1e6
+        maxcost: float = -1e6
+        sumcost = 0
+        for line in edgetxt:
+            if line[0] == "#":
+                continue
+            if len(line) <= 1:
+                continue
+            n1, n2, cost = line.split(",")
+            if n1 not in self.nbr:
+                print(f'Error in edgelist: "{n1}" is not a node')
+                continue
+            if n2 not in self.nbr:
+                print(f'Error in edgelist: "{n2}" is not a node')
+                continue
+            self.nbr[n1].append(n2)
+            self.nbr[n2].append(n1)
+            fcost = float(cost)
+            mincost = min(mincost, fcost)
+            maxcost = max(maxcost, fcost)
+            sumcost += fcost
+            self.edgecost[f"{n1}:{n2}"] = fcost
+            self.edgecost[f"{n2}:{n1}"] = fcost
+        nedges = max(1, len(self.edgecost))
+        print(f"edge costs min:{mincost:.3f} max:{maxcost:.3f} avg:{sumcost/nedges:.3f}")
+
+        if obsttxt:
+            for line in obsttxt:
+                if line[0] == "#":
+                    continue
+                if len(line) <= 1:
+                    continue
+                x, y, diam = line.split(",")
+                self.obst.append({"x": float(x),
+                                  "y": float(y),
+                                  "diam": float(diam)})
+
+        if not noseed:
+            random.seed(seed)
+
+        if verbosity > 0:
+            if no_seed:
+                print(f"Random seed not used") 
+            else:
+                print(f"Random seed set to {seed}")
+
+        if self.verbosity > 1:
+            print("obst", self.obst)
+
+        if self.verbosity > 0:
+            print(f"Prmgen has {len(self.nodedict)} nodes and {len(self.edgecost)} edges and {len(self.obst)} obstacles")
+
+    def FileToList(self, fname: str) -> list[str]:
+        if (os.path.isfile(fname)):
+            with open(fname) as f:
+                flist = f.readlines()
+                return flist
+        else:
+            return []
+
+    def GenNodesAndEdges(self, n: int, x0: float, y0: float, x1: float, y1: float):
+        """
+        Generate n additional nodes in the rectangle defined by x0,y0,x1,y1
+        """
+        org_node_ids = list(self.nodedict.keys())
+        gen_node_ids = []
+        startid = len(self.nodedict)+1
+        for i in range(n):
+            id = f"{startid+i}"
+            x = random.uniform(x0, x1)
+            y = random.uniform(y0, y1)
+            self.nodedict[id] = {"x": x, "y": y, "id": id, "cost": 0, "tent_tot_cost": 0}
+            self.nbr[id] = []
+            self.nodestat[id] = "unvisited"
+            gen_node_ids.append(id)
+
+        for i1, id_i in enumerate(gen_node_ids):
+            for j in range(i1+1, len(gen_node_ids)):
+                id_j = gen_node_ids[j]
+                if self.LineOfSight(id_i, id_j):
+                    self.nbr[id_i].append(id_j)
+                    self.nbr[id_j].append(id_i)
+                    self.edgecost[f"{id_i}:{id_j}"] = self.Dist(id_i, id_j)
+                    self.edgecost[f"{id_j}:{id_i}"] = self.Dist(id_j, id_i)
+
+        for id_i in gen_node_ids:
+            for id_j in org_node_ids:
+                if self.LineOfSight(id_i, id_j):
+                    self.nbr[id_i].append(id_j)
+                    self.nbr[id_j].append(id_i)
+                    self.edgecost[f"{id_i}:{id_j}"] = self.Dist(id_i, id_j)
+                    self.edgecost[f"{id_j}:{id_i}"] = self.Dist(id_j, id_i)
+
+    def LineOfSight(self, n1: str, n2: str) -> bool:
+        """
+        Check if the line between nodes n1 and n2 is clear of obstacles
+        """
+        x1 = self.nodedict[n1]["x"]
+        y1 = self.nodedict[n1]["y"]
+        x2 = self.nodedict[n2]["x"]
+        y2 = self.nodedict[n2]["y"]
+        for o in self.obst:
+            xo = o["x"]
+            yo = o["y"]
+            diam = o["diam"]
+            if self.LineCircleIntersect(x1, y1, x2, y2, xo, yo, diam):
+                return False
+        return True
+
+    def LineCircleIntersect0(self, x1: float, y1: float, x2: float, y2: float, xo: float, yo: float, diam: float) -> bool:
+        """
+        Check if the line between (x1,y1) and (x2,y2) intersects the circle at (xo,yo) with diameter diam
+        Obviously wrong since it isn't using the center of the circle idiot
+        """
+        # https://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
+        dx = x2 - x1
+        dy = y2 - y1
+        dr = math.sqrt(dx*dx + dy*dy)
+        D = x1*y2 - x2*y1
+        discriminant = diam*diam*dr*dr - D*D
+        if discriminant < 0:
+            return False
+        else:
+            return True
+
+    def LineCircleIntersect(self, x1: float, y1: float, x2: float, y2: float, xo: float, yo: float, diam: float) -> bool:
+        cenpt = Point(xo, yo)
+        circ = cenpt.buffer(diam/2).boundary
+        lineseg = LineString([(x1, y1), (x2, y2)])
+        isect = circ.intersects(lineseg)
+        # print(f"LineCircleIntersect: {isect}")
+        return isect
+
+    def Dist(self, n1: str, n2: str) -> float:
+        """
+        Return the distance between nodes n1 and n2
+        """
+        x1 = self.nodedict[n1]["x"]
+        y1 = self.nodedict[n1]["y"]
+        x2 = self.nodedict[n2]["x"]
+        y2 = self.nodedict[n2]["y"]
+        return math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
+
+    def ExtractNodesIntoList(self) -> list[str]:
+        """
+        Extract the nodes in the nodelist into a list of csv strings
+        """
+        rv = []
+        for n in self.nodedict:
+            x = self.nodedict[n]["x"]
+            y = self.nodedict[n]["y"]
+            rv.append(f"{n},{x:.3f},{y:.3f},100")
+        return rv
+
+    def ExtractEdgesIntoList(self) -> list[str]:
+        """
+        Extract the edges in the edgecost into a list of csv strings
+        """
+        rv = []
+        for e in self.edgecost:
+            n1, n2 = e.split(":")
+            cost = self.edgecost[e]
+            rv.append(f"{n1},{n2},{cost:.3f}")
+        return rv
 
 
-if __name__ == "__main__":
-    rv = astar(firstnode,targetnode)
-    print("bestpath:",rv)
-    print(f"{astarcost(rv):.5f}")
-    plt.show()
-    altpath = ['1', '2', '5', '7', '10', '12']
-    print("altpath:",altpath)
-    print(f"{astarcost(altpath):.5f}")
-    altpath1 = ['1', '3', '4', '8', '12']
-    print("altpath1:",altpath1)
-    print(f"{astarcost(altpath1):.5f}")
-    altpath3 = ['1', '2', '5', '7', '10', '12']
-    print("altpath3:",altpath3)
-    print(f"{astarcost(altpath3):.5f}")
+def main():
+    fp_nodename = f"{dname}/{fnamenodes}"
+    fp_edgename = f"{dname}/{fnameedges}"
+    fp_obstacles = f"{dname}/{fnameobstacles}"
+
+    prma = PrmGen([fp_nodename], [fp_edgename], [fp_obstacles], 
+                  verbosity=verbosity, noseed=no_seed, seed=seed)
+    prma.GenNodesAndEdges(nodes_to_gen, -0.5, -0.5, 0.5, 0.5)
+
+    nodetxt = prma.ExtractNodesIntoList()
+    edgetxt = prma.ExtractEdgesIntoList()
+
+    asta = astar.AStar(nodetxt, edgetxt, [fp_obstacles], verbosity=verbosity)
+    rv = asta.FindPath(firstnode, targetnode, scenename=astarscene,
+                       stepplot=stepplot, finplot=finplot)
+    print("bestpath:", rv)
+    print(f"bestpath cost:{asta.AstarCost(rv):.5f}")
+    asta.ShowPlot()
 
     # Write out the solution node path to "path.csv"
     nodestring = ",".join(rv)
     with open('path.csv', 'w') as file:
         file.write(nodestring)
+
+
+if __name__ == "__main__":
+    main()
