@@ -1,4 +1,5 @@
 import astar
+import argparse
 
 nodetxt = [
     "# Each line is of the form 'node,cost_to_go,heuristic_cost",
@@ -23,29 +24,96 @@ edgetxt = [
     "5,6,10",
 ]
 
-fnamenodes = "nodes.csv"
-fnameedges = "edges.csv"
-firstnode = "1"
-targetnode = "2"
+parser = argparse.ArgumentParser(
+                    prog='AstarMain',
+                    description='Calculates Astar path for a set of nodes and edges',
+                    epilog='Text at the bottom of help')
 
-dname = "planning_coursera"
+parser.add_argument('-n', '--nodes', type=str, default="nodes.csv",
+                    help='Name of the nodes file')
+parser.add_argument('-e', '--edges', type=str, default="edges.csv",
+                    help='Name of the edges file')
+parser.add_argument('-f', '--firstnode', type=str, default="1",
+                    help='Name of the first node')
+parser.add_argument('-t', '--targetnode', type=str, default="12",
+                    help='Name of the target node')
+parser.add_argument('-s', '--scene', type=str, default="Scene5",
+                    help='Name of the scene')
+parser.add_argument('-d', '--directory', type=str, default="Scene5",
+                    help='Name of the directory')
+parser.add_argument('-fp', '--finplot', action='store_true',
+                    help='Do a plot of final path')
+parser.add_argument('-sp', '--stepplot', action='store_true', 
+                    help='Create a plot that shows the steps to finding the final path')
+
+
+args = parser.parse_args()
+
+fnamenodes = args.nodes
+fnameedges = args.edges
+firstnode = args.firstnode
+targetnode = args.targetnode
+astarscene = args.scene
+dname = args.directory
+finplot = args.finplot
+stepplot = args.stepplot
+
+
+# dname = "planning_coursera"
+
+# astarscene = "PRM2"
+# astarscene = "Scene5"
+# astarscene = "PRM"
+# astarscene = ""
+# astarscene = "Scene5"
+
+
+# if astarscene == "Scene5":
+#     dname = "Scene5"
+#     fnamenodes = "nodes.csv"
+#     fnameedges = "edges.csv"
+#     firstnode = "1"
+#     targetnode = "12"
+
+# elif astarscene == "oldPRM":
+#     dname = "oldPRM"
+#     fnamenodes = "nodes.csv"
+#     fnameedges = "edges.csv"
+#     firstnode = "1.000000"
+#     targetnode = "36.000000"
+
+# elif astarscene == "PRM2":
+#     dname = "oldPRM"
+#     fnamenodes = "nodes2.csv"
+#     fnameedges = "PRM/edges2.csv"
+#     firstnode = "1.000000"
+#     targetnode = "36.000000"
+
+# if fnamenodes != "":
+#     with open(f"{dname}/{fnamenodes}") as file:
+#         sizehint = 0
+#         nodetxt = file.readlines(sizehint)
+
+#     print(f"There are {len(nodetxt)} nodes")
+#     # print(nodetxt)
+
+# if fnameedges != "":
+#     with open(f"{dname}/{fnameedges}") as file:
+#         sizehint = 0
+#         edgetxt = file.readlines(sizehint)
+
+#     print(f"There are {len(edgetxt)} edges")
 
 
 def main():
-    a = astar.AStar(nodetxt, edgetxt)
-    rv = a.astar('1', '6')
+    fp_nodename = f"{dname}/{fnamenodes}"
+    fp_edgename = f"{dname}/{fnameedges}"
+    asta = astar.AStar([fp_nodename], [fp_edgename])
+    rv = asta.FindPath(firstnode, targetnode, scenename=astarscene,
+                       stepplot=stepplot, finplot=finplot)
     print("bestpath:", rv)
-    print(f"{a.astarcost(rv):.5f}")
-    a.pltshow()
-    altpath = ['1', '2', '5', '7', '10', '12']
-    print("altpath:", altpath)
-    print(f"{a.astarcost(altpath):.5f}")
-    altpath1 = ['1', '3', '4', '8', '12']
-    print("altpath1:", altpath1)
-    print(f"{a.astarcost(altpath1):.5f}")
-    altpath3 = ['1', '2', '5', '7', '10', '12']
-    print("altpath3:", altpath3)
-    print(f"{a.astarcost(altpath3):.5f}")
+    print(f"bestpath cost:{asta.AstarCost(rv):.5f}")
+    asta.ShowPlot()
 
     # Write out the solution node path to "path.csv"
     nodestring = ",".join(rv)

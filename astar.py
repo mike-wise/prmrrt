@@ -1,9 +1,8 @@
 import numpy
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+import os
 # f l a k e 8 : noqa
-
 
 
 class AStar:
@@ -15,6 +14,16 @@ class AStar:
     edgecost: dict[str, float] = {}
 
     def __init__(self, nodetxt: list[str], edgetxt: list[str]):
+        print("AStar.__init__")
+        print("nodetxt:", nodetxt)
+        print("edgetxt:", edgetxt)
+        if (len(nodetxt) == 1):
+            nodetxt = self.FileToList(nodetxt[0])
+        if (len(edgetxt) == 1):
+            edgetxt = self.FileToList(edgetxt[0])
+
+        print("There are", len(nodetxt), "nodes")
+        print("There are", len(edgetxt), "edges")
         for line in nodetxt:
             if line[0] == "#":
                 continue
@@ -27,11 +36,11 @@ class AStar:
                                 "tent_tot_cost": float(cst)}
             self.nbr[n] = []
             self.nodestat[n] = "unvisited"
-        print("nodedict", self.nodedict)
-        print("nbr", self.nbr)
+        # print("nodedict", self.nodedict)
+        # print("nbr", self.nbr)
 
-        mincost = 1e6
-        maxcost = -1e6
+        mincost: float = 1e6
+        maxcost: float = -1e6
         sumcost = 0
         for line in edgetxt:
             if line[0] == "#":
@@ -39,23 +48,39 @@ class AStar:
             if len(line) <= 1:
                 continue
             n1, n2, cost = line.split(",")
+            if n1 not in self.nbr:
+                print(f"Error in edgelist: ""{n1}"" is not a node")
+                continue
+            if n2 not in self.nbr:
+                print(f"Error in edgelist: ""{n2}"" is not a node")
+                continue
             self.nbr[n1].append(n2)
             self.nbr[n2].append(n1)
-            if float(cost) < mincost:
-                mincost = float(cost)
-            if float(cost) > maxcost:
-                maxcost = float(cost)
-            sumcost += float(cost)
-            self.edgecost[f"{n1}:{n2}"] = float(cost)
-            self.edgecost[f"{n2}:{n1}"] = float(cost)
-        print(f"mincost:{mincost:.3f} maxcost:{maxcost:.3f} avgcost:{sumcost/len(self.edgecost):.3f}")
+            fcost = float(cost)
+            mincost = min(mincost, fcost)
+            maxcost = max(maxcost, fcost)
+            sumcost += fcost
+            self.edgecost[f"{n1}:{n2}"] = fcost
+            self.edgecost[f"{n2}:{n1}"] = fcost
+        nedges = max(1, len(self.edgecost))
+        print(f"mincost:{mincost:.3f} maxcost:{maxcost:.3f} avgcost:{sumcost/nedges:.3f}")
         # print("edgecost",edgecost)
 
+    def FileToList(self, fname: str) -> list[str]:
+        if (os.path.isfile(fname)):
+            with open(fname) as f:
+                flist = f.readlines()
+                return flist
+        else:
+            return []
+
     def Distance(self, n1: str, n2: str):
-        x1 = self.nodedict[n1]["x"]
-        y1 = self.nodedict[n1]["y"]
-        x2 = self.nodedict[n2]["x"]
-        y2 = self.nodedict[n2]["y"]
+        n1 = self.nodedict[n1]
+        x1 = n1["x"]
+        y1 = n1["y"]
+        n2 = self.nodedict[n2]
+        x2 = n2["x"]
+        y2 = n2["y"]
         return numpy.sqrt((x1-x2)**2 + (y1-y2)**2)
 
     def CheckDistances(self):
@@ -63,8 +88,8 @@ class AStar:
             n1, n2 = e.split(":")
             dist = self.Distance(n1, n2)
             if dist > self.edgecost[e]:
-                m = f"CheckDist error dist>edgcost: {n1} {n2} {dist:.1f} {self.edgecost[e]}"
-                print(m)
+                msg = f"CheckDist error dist>edgcost: {n1} {n2} {dist:.1f} {self.edgecost[e]}"
+                print(msg)
 
     def GetNodeColor(self, n: str):
         # Named colors: https://matplotlib.org/stable/gallery/color/named_colors.html
@@ -76,12 +101,16 @@ class AStar:
             return "blue"
         return "black"
 
-    def PlotNodesWithNames(self, iplt: int):
+    def PlotNodesWithNames(self, iplt: int, isSubplot=True):
 
         # Plot the nodes using matplotlib
 
-        nrows = self.nrows
-        ncols = self.ncols
+        if isSubplot:
+            nrows = self.nrows
+            ncols = self.ncols
+        else:
+            nrows = 1
+            ncols = 1
 
         ax = self.fig.add_subplot(nrows, ncols, iplt, aspect='equal')  # type: ignore
 
@@ -92,14 +121,10 @@ class AStar:
         for n in self.nodedict.keys():
             xx = self.nodedict[n]["x"]
             yy = self.nodedict[n]["y"]
-            if xx < xmin:
-                xmin = xx
-            if self.nodedict[n]["x"] > xmax:
-                xmax = xx
-            if yy < ymin:
-                ymin = yy
-            if yy > ymax:
-                ymax = yy
+            xmin = min(xmin, xx)
+            xmax = max(xmax, xx)
+            ymin = min(ymin, yy)
+            ymax = max(ymax, yy)
 
         borderx = 0.1*(xmax-xmin)
         bordery = 0.1*(ymax-ymin)
@@ -150,22 +175,23 @@ class AStar:
     nrows: int = 3
     ncols: int = 6
 
-    def setupPlot(self, tit: str):
-        # global nodedict, iplot, nrows, ncols, fig
+    def SetupPlot(self, tit: str):
         self.iplot = 1
         self.fig = plt.figure()
         self.fig.suptitle(tit)
 
-    def doSubPlot(self, n: str, actionline: str):
-        # global nodedict, iplot, nrows, ncols
-        self.PlotNodesWithNames(self.iplot)
-        curp = self.getParentList(n)
+    def ShowPlot(self):
+        plt.show()
+
+    def DoSubPlot(self, n: str, actionline: str, isSubPlot=True):
+        self.PlotNodesWithNames(self.iplot, isSubPlot)
+        curp = self.GetParentList(n)
         curp.reverse()
-        cost = self.astarcost(curp)
+        cost = self.AstarCost(curp)
         self.iplot += 1
         self.HightlightNodesInPath(curp, cost, actionline)
 
-    def addNodeToOpenList(self, n: str):
+    def AddNodeToOpenList(self, n: str):
         # global nodedict
         ntentcost = self.nodedict[n]["tent_tot_cost"]
         for i in range(len(self.openlist)):
@@ -178,11 +204,11 @@ class AStar:
         self.nodestat[n] = "open"
         # print(f"openlist:{openlist} {ntentcost}")
 
-    def addNodeToClosedList(self, n: str):
+    def AddNodeToClosedList(self, n: str):
         self.closedlist.append(n)
         self.nodestat[n] = "closed"
 
-    def getParentList(self, n: str) -> list[str]:
+    def GetParentList(self, n: str) -> list[str]:
         # global nodedict,parentnode
         rv = []
         while n in self.nodedict.keys():
@@ -192,7 +218,7 @@ class AStar:
             n = self.parentnode[n]
         return rv
 
-    def getSeeminglyClosestNodeToTarget(self) -> str:
+    def GetSeeminglyClosestNodeToTarget(self) -> str:
         # global nodedict
         if len(self.openlist) == 1:
             return self.openlist[0]
@@ -207,7 +233,7 @@ class AStar:
                 minnode = n
         return minnode
 
-    def assignParent(self, n: str, parent: str, goal: str):
+    def AssignParent(self, n: str, parent: str, goal: str):
         # global nodedict, parentnode
         self.parentnode[n] = parent
         pd = self.nodedict[parent]
@@ -215,44 +241,55 @@ class AStar:
         nd["cost"] = pd["cost"] + self.edgecost[f"{parent}:{n}"]
         nd["tent_tot_cost"] = nd["cost"] + self.Distance(n, goal)
 
-    def astar(self, start: str, goal: str) -> list[str]:
+    def FindPath(self, start: str, goal: str, scenename="Scene", stepplot=False, finplot=False) -> list[str]:
         # global nodedict, nbr, edgecost
         self.openlist = [start]
         self.closedlist = []
-        self.setupPlot(f"A* for astarscene")
+        if stepplot:
+            finplot = False
+        if start not in self.nodedict.keys():
+            print(f"Error Start node ""{start}"" not in nodedict")
+            return []
+        if goal not in self.nodedict.keys():
+            print(f"Error Goal node ""{goal}"" not in nodedict")
+            return []
+
+        if stepplot or finplot:
+            self.SetupPlot(f"A* for {scenename} from {start} to {goal}")
         while len(self.openlist) > 0:
-            n: str = self.getSeeminglyClosestNodeToTarget()
+            n: str = self.GetSeeminglyClosestNodeToTarget()
             self.openlist.remove(n)
             if n == goal:
-                rv = self.getParentList(n)
+                rv = self.GetParentList(n)
                 rv.reverse()
-                self.doSubPlot(n, f"Solution")
+                if stepplot or finplot:
+                    self.DoSubPlot(n, f"Solution", isSubPlot=not finplot)
                 return rv
             for n2 in self.nbr[n]:
                 if n2 in self.closedlist:
                     continue
                 if n2 not in self.openlist:
-                    self.assignParent(n2, n, goal)
-                    self.addNodeToOpenList(n2)
-                    self.doSubPlot(n2, f"added {n2} to openlist")
+                    self.AssignParent(n2, n, goal)
+                    self.AddNodeToOpenList(n2)
+                    if stepplot:
+                        self.DoSubPlot(n2, f"added {n2} to openlist")
                 else:
                     # if the nodes is in the openlist then we might need to reset the costs if we found a better path
                     if self.nodedict[n2]["cost"] > self.nodedict[n]["cost"] + self.edgecost[f"{n}:{n2}"]:
-                        self.assignParent(n2, n, goal)
-            self.addNodeToClosedList(n)
-            self.doSubPlot(n, f"added {n} to closed")
+                        self.AssignParent(n2, n, goal)
+            self.AddNodeToClosedList(n)
+            if stepplot:
+                self.DoSubPlot(n, f"added {n} to closed")
 
         return []
 
-    def astarcost(self, path) -> float:
+    def AstarCost(self, path) -> float:
         # global nodedict, edgecost
         cost = 0
         for i in range(len(path)-1):
             n1 = path[i]
             n2 = path[i+1]
-            print(self.edgecost[f"{n1}:{n2}"])
+            # print(self.edgecost[f"{n1}:{n2}"])
             cost += self.edgecost[f"{n1}:{n2}"]
         return cost
 
-    def pltshow():
-        plt.show()
