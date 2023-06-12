@@ -35,8 +35,8 @@ parser.add_argument('-sp', '--stepplot', action='store_true',
                     help='Create a plot that shows the steps to finding the final path')
 parser.add_argument('-v', '--verbose', type=int, default=0,
                     help='Verbosity level')
-parser.add_argument('-ns', '--noseed', action='store_true',
-                    help='Do not use a random seed')
+parser.add_argument('-rs', '--ranseed', action='store_true',
+                    help='Generate a random seed and print it out')
 parser.add_argument('-seed', '--seed', type=int, default=1234,
                     help='Random seed value')
 
@@ -54,7 +54,7 @@ dname = args.directory
 finplot = args.finplot
 stepplot = args.stepplot
 verbosity = args.verbose
-no_seed = args.noseed
+ran_seed = args.ranseed
 seed = args.seed
 nodes_to_gen = args.nodes_to_gen
 
@@ -74,109 +74,38 @@ if verbosity > 0:
     print("    finplot:", finplot)
     print("    stepplot:", stepplot)
     print("    verbosity:", verbosity)
-    print("    no_seed:", no_seed)
+    print("    ran_seed:", ran_seed)
     print("    seed:", seed)
 
 
-class PrmGen:
+class PrmGen(astar.AStar):
     """
     Class to generate PRM nodes and edges
     """
 
-    nodedict: dict[str, dict[str, float]] = {}
-    nodestat: dict[str, str] = {}
-    parentnode: dict[str, str] = {}
-    nbr: dict[str, list[str]] = {}
-    edgecost: dict[str, float] = {}
-    obst: list[dict[str, float]] = []
+    seed = 1234
 
     def __init__(self, nodetxt: list[str], edgetxt: list[str], obsttxt: list[str] = None,
-                 verbosity: int = 1, noseed: bool = False, seed: int = 1234):
-        self.verbosity = verbosity
-        if self.verbosity > 0:
-            print(f"AStar.__init__")
-            print("nodetxt:", nodetxt)
-            print("edgetxt:", edgetxt)
-            print("obsttxt:", obsttxt)
-        if (len(nodetxt) == 1):
-            nodetxt = self.FileToList(nodetxt[0])
-        if (len(edgetxt) == 1):
-            edgetxt = self.FileToList(edgetxt[0])
-        if (obsttxt and len(obsttxt) == 1):
-            obsttxt = self.FileToList(obsttxt[0])
+                 verbosity: int = 1, ranseed: bool = False, seed: int = 1234):
+        """
+        Constructor
+        :param nodetxt: list of node lines
+        :param edgetxt: list of edge lines
+        :param obsttxt: list of obstacle lines
+        :param verbosity: verbosity level
+        :param seed: seed value
+        """
+        super().__init__(nodetxt, edgetxt, obsttxt, verbosity)
 
-        if self.verbosity > 0:
-            print(f"There are {len(nodetxt)} nodes lines and {len(edgetxt)} edge lines")
-            if obsttxt:
-                print(f"There are {len(obsttxt)} obstacle lines")
-            else:
-                print(f"No obstacle file")
+        if ranseed:
+            self.seed = random.randint(0, 10000)
+            if verbosity > 0:
+                print("Generated random seed:", self.seed)
+        else:
+            self.seed = seed
 
-        for line in nodetxt:
-            if line[0] == "#":
-                continue
-            if len(line) <= 1:
-                continue
-            n, xv, yv, cst = line.split(",")
-            self.nodedict[n] = {"x": float(xv),
-                                "y": float(yv),
-                                "id": n,
-                                "cost": float(cst),
-                                "tent_tot_cost": float(cst)}
-            self.nbr[n] = []
-            self.nodestat[n] = "unvisited"
-
-        if self.verbosity > 1:
-            print("nodedict", self.nodedict)
-            print("nbr", self.nbr)
-
-        mincost: float = 1e6
-        maxcost: float = -1e6
-        sumcost = 0
-        for line in edgetxt:
-            if line[0] == "#":
-                continue
-            if len(line) <= 1:
-                continue
-            n1, n2, cost = line.split(",")
-            if n1 not in self.nbr:
-                print(f'Error in edgelist: "{n1}" is not a node')
-                continue
-            if n2 not in self.nbr:
-                print(f'Error in edgelist: "{n2}" is not a node')
-                continue
-            self.nbr[n1].append(n2)
-            self.nbr[n2].append(n1)
-            fcost = float(cost)
-            mincost = min(mincost, fcost)
-            maxcost = max(maxcost, fcost)
-            sumcost += fcost
-            self.edgecost[f"{n1}:{n2}"] = fcost
-            self.edgecost[f"{n2}:{n1}"] = fcost
-        nedges = max(1, len(self.edgecost))
-        print(f"edge costs min:{mincost:.3f} max:{maxcost:.3f} avg:{sumcost/nedges:.3f}")
-
-        if obsttxt:
-            for line in obsttxt:
-                if line[0] == "#":
-                    continue
-                if len(line) <= 1:
-                    continue
-                x, y, diam = line.split(",")
-                id = len(self.obst)
-                self.obst.append({"id":str(id),
-                                  "x": float(x),
-                                  "y": float(y),
-                                  "diam": float(diam)})
-
-        if not noseed:
-            random.seed(seed)
-
-        if verbosity > 0:
-            if no_seed:
-                print(f"Random seed not used")
-            else:
-                print(f"Random seed set to {seed}")
+        random.seed(self.seed)
+        print(f"Random seed set to {self.seed}")
 
         self.maxlinks = 3
 
@@ -201,11 +130,12 @@ class PrmGen:
         self.maxlinks = maxlinks
         org_node_ids = list(self.nodedict.keys())
         gen_node_ids = []
+        startid = len(self.nodedict)+1
         # startid = len(self.nodedict)+1
         while len(gen_node_ids) < n:
             i = len(gen_node_ids)
             # id = f"{startid+i}"
-            id = f"_{i}"
+            id = f"{startid+i}"
             x = random.uniform(x0, x1)
             y = random.uniform(y0, y1)
 
@@ -228,36 +158,39 @@ class PrmGen:
                 print(f"Generated node {id} x:{x:.3f} y:{y:.3f}")
             gen_node_ids.append(id)
 
+        for i, id_i in enumerate(org_node_ids):
+            todo = gen_node_ids.copy()
+            self.TryConnectListClosestK(id_i, todo, maxlinks=self.maxlinks)
+
         for i, id_i in enumerate(gen_node_ids):
             todo = org_node_ids.copy()
             todo.extend(gen_node_ids[i+1:])
             self.TryConnectListClosestK(id_i, todo, maxlinks=self.maxlinks)
 
-        # for id_i in gen_node_ids:
-        #     for id_j in org_node_ids:
-        #         self.TryConnect(id_i, id_j)
+        if verbosity > 1:
+            print("org_node_ids:", org_node_ids)
+            print("gen_node_ids:", gen_node_ids)
 
-        # for i1, id_i in enumerate(gen_node_ids):
-        #     for j in range(i1+1, len(gen_node_ids)):
-        #         id_j = gen_node_ids[j]
-        #         self.TryConnect(id_i, id_j)
-
-        print("org_node_ids:", org_node_ids)
-        print("gen_node_ids:", gen_node_ids)
-
-    def TryConnectListClosestK(self, id_i: str, id_list: list[str], maxlinks: int = 2) -> bool:
+    def TryConnectListClosestK(self, id_i: str, id_list: list[str], maxlinks: int = 3) -> bool:
         """
         Try to connect node id_i to the closest nodes in id_list
         """
         nlinks = 0
+        linklst = []
+        ncand = len(id_list)
         while len(id_list) > 0:
             id_j = self.FindClosestNodeInList(id_i, id_list)
             id_list.remove(id_j)
             if self.TryConnect(id_i, id_j):
                 nlinks += 1
+                linklst.append(id_j)
                 if nlinks >= maxlinks:
-                    return True
+                    if verbosity > 1:
+                        print(f"Connected node {id_i} to {nlinks}/{ncand} nodes:{linklst}")
+                        return True
 
+        if verbosity > 1:
+            print(f"Connected node {id_i} to {nlinks}/{ncand} nodes out of {len(id_list)}:{linklst}")
         return False
 
     def FindClosestNodeInList(self, id: str, id_list: list[str]) -> str:
@@ -308,6 +241,7 @@ class PrmGen:
         """
         Check if the line between nodes n1 and n2 is clear of obstacles
         """
+        # print(f"LineOfSight: {n1} -> {n2}")
         nn1 = self.nodedict[n1]
         nn2 = self.nodedict[n2]
         x1 = nn1["x"]
@@ -319,32 +253,41 @@ class PrmGen:
             yo = o["y"]
             diam = o["diam"]
             if self.LineCircleIntersect(x1, y1, x2, y2, xo, yo, diam):
+                if verbosity > 1:
+                    print(f"LineOfSight: {n1} -> {n2} intersects obstacle {o['id']}")
                 return False
         return True
 
-    def LineCircleIntersect0(self, x1: float, y1: float, x2: float, y2: float, xo: float, yo: float, diam: float) -> bool:
+    def LineCircleIntersect(self, x1: float, y1: float, x2: float, y2: float, cx: float, cy: float, diam: float) -> bool:
         """
         Check if the line between (x1,y1) and (x2,y2) intersects the circle at (xo,yo) with diameter diam
-        Co-pilot obviously got this very wrong since it isn't using the center of the circle
-        Don't use this obviously, leaving it in for my own amusement
         """
         # https://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
+
+        rad = diam/2
+
         dx = x2 - x1
         dy = y2 - y1
-        dr = math.sqrt(dx*dx + dy*dy)
-        D = x1*y2 - x2*y1
-        discriminant = diam*diam*dr*dr - D*D
-        if discriminant < 0:
+        a = dx*dx + dy*dy
+        t = (dx*(cx-x1) + dy*(cy-y1)) / a
+        if t < 0:
             return False
-        else:
-            return True
+        if t > 1:
+            return False
+        x = x1 + t*dx
+        y = y1 + t*dy
+        dist = math.sqrt((x-cx)**2 + (y-cy)**2)
+        if dist > rad:
+            return False
+        return True
 
-    def LineCircleIntersect(self, x1: float, y1: float, x2: float, y2: float, xo: float, yo: float, diam: float) -> bool:
+    def LineCircleIntersectShapely(self, x1: float, y1: float, x2: float, y2: float, xo: float, yo: float, diam: float) -> bool:
         cenpt = Point(xo, yo)
         circ = cenpt.buffer(diam/2).boundary
         lineseg = LineString([(x1, y1), (x2, y2)])
         isect = circ.intersects(lineseg)
-        # print(f"LineCircleIntersect: {isect}")
+        if verbosity > 1:
+            print(f"LineCircleIntersect: {isect}")
         return isect
 
     def Dist(self, n1: str, n2: str) -> float:
@@ -368,7 +311,7 @@ class PrmGen:
             nn = self.nodedict[n]
             x = nn["x"]
             y = nn["y"]
-            rv.append(f"{n},{x:.3f},{y:.3f},100")
+            rv.append(f"{n},{x:.3f},{y:.3f},100\n")
         return rv
 
     def ExtractEdgesIntoList(self) -> list[str]:
@@ -379,7 +322,19 @@ class PrmGen:
         for e in self.edgecost:
             n1, n2 = e.split(":")
             cost = self.edgecost[e]
-            rv.append(f"{n1},{n2},{cost:.3f}")
+            rv.append(f"{n1},{n2},{cost:.3f}\n")
+        return rv
+
+    def ExtractObstIntoList(self) -> list[str]:
+        """
+        Extract the obstacles in the obst into a list of csv strings
+        """
+        rv = []
+        for o in self.obst:
+            x = o["x"]
+            y = o["y"]
+            diam = o["diam"]
+            rv.append(f"{x:.3f},{y:.3f},{diam:.3f}\n")
         return rv
 
 
@@ -389,24 +344,33 @@ def main():
     fp_obstacles = f"{dname}/{fnameobstacles}"
 
     prma = PrmGen([fp_nodename], [fp_edgename], [fp_obstacles], 
-                  verbosity=verbosity, noseed=no_seed, seed=seed)
+                  verbosity=verbosity, ranseed=ran_seed, seed=seed)
     prma.GenNodesAndEdges(nodes_to_gen, -0.5, -0.5, 0.5, 0.5, maxlinks)
 
-    nodetxt = prma.ExtractNodesIntoList()
-    edgetxt = prma.ExtractEdgesIntoList()
+    nodelist = prma.ExtractNodesIntoList()
+    edgelist = prma.ExtractEdgesIntoList()
+    obstlist = prma.ExtractObstIntoList()
 
-    asta = astar.AStar(nodetxt, edgetxt, [fp_obstacles], verbosity=verbosity)
-    rv = asta.FindPath(firstnode, targetnode, scenename=astarscene,
+    rv = prma.FindPath(firstnode, targetnode, scenename=astarscene,
                        stepplot=stepplot, finplot=finplot)
     print("bestpath:", rv)
-    print(f"bestpath cost:{asta.AstarCost(rv):.5f}")
-    asta.ShowPlot()
+    print(f"bestpath cost:{prma.AstarCost(rv):.5f}")
+    prma.ShowPlot()
 
     # Write out the solution node path to "path.csv"
-    nodestring = ",".join(rv)
+    pathline = ",".join(rv)
     with open('path.csv', 'w') as file:
-        file.write(nodestring)
+        file.write(pathline)
 
+    # Write out generated edges and nodes
+    with open('nodes.csv', 'w') as file:
+        file.writelines(nodelist)
+
+    with open('edges.csv', 'w') as file:
+        file.writelines(edgelist)
+
+    with open('obstacles.csv', 'w') as file:
+        file.writelines(obstlist)
 
 if __name__ == "__main__":
     main()
