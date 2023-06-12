@@ -9,6 +9,8 @@ parser.add_argument('-n', '--nodes', type=str, default="nodes.csv",
                     help='Name of the nodes file')
 parser.add_argument('-e', '--edges', type=str, default="edges.csv",
                     help='Name of the edges file')
+parser.add_argument('-of', '--obstacles', type=str, default="obstacles.csv",
+                    help='Name of the obstacles file')
 parser.add_argument('-f', '--firstnode', type=str, default="1",
                     help='Name of the first node')
 parser.add_argument('-t', '--targetnode', type=str, default="12",
@@ -29,6 +31,7 @@ args = parser.parse_args()
 
 fnamenodes = args.nodes
 fnameedges = args.edges
+fnameobstacles = args.obstacles
 firstnode = args.firstnode
 targetnode = args.targetnode
 astarscene = args.scene
@@ -37,11 +40,25 @@ finplot = args.finplot
 stepplot = args.stepplot
 verbosity = args.verbose
 
+if verbosity > 0:
+    print("prm.py args:")
+    print("    fnamenodes:", fnamenodes)
+    print("    fnameedges:", fnameedges)
+    print("    fnameobstacles:", fnameobstacles)
+    print("    firstnode:", firstnode)
+    print("    targetnode:", targetnode)
+    print("    astarscene:", astarscene)
+    print("    dname:", dname)
+    print("    finplot:", finplot)
+    print("    stepplot:", stepplot)
+    print("    verbosity:", verbosity)
+
 
 def main():
     fp_nodename = f"{dname}/{fnamenodes}"
     fp_edgename = f"{dname}/{fnameedges}"
-    asta = astar.AStar([fp_nodename], [fp_edgename], verbosity=verbosity)
+    fp_obstename = f"{dname}/{fnameobstacles}"
+    asta = astar.AStar([fp_nodename], [fp_edgename], [fp_obstename], verbosity=verbosity)
     rv = asta.FindPath(firstnode, targetnode, scenename=astarscene,
                        stepplot=stepplot, finplot=finplot)
     print("bestpath:", rv)

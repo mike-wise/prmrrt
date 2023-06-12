@@ -11,16 +11,20 @@ parser = argparse.ArgumentParser(prog='PrmMain.py',
                                  description='Calculates PRM path around obstacles',
                                  epilog='Text at the bottom of help')
 
-parser.add_argument('-n', '--nodes', type=str, default="nodes.csv",
+parser.add_argument('-nf', '--nodes', type=str, default="nodes.csv",
                     help='Name of the nodes file')
-parser.add_argument('-e', '--edges', type=str, default="edges.csv",
+parser.add_argument('-ef', '--edges', type=str, default="edges.csv",
                     help='Name of the edges file')
-parser.add_argument('-o', '--obstacles', type=str, default="obstacles.csv",
-                    help='Name of the edges file')
-parser.add_argument('-f', '--firstnode', type=str, default="1",
+parser.add_argument('-of', '--obstacles', type=str, default="obstacles.csv",
+                    help='Name of the obstacles file')
+parser.add_argument('-fn', '--firstnode', type=str, default="1",
                     help='Name of the first node')
-parser.add_argument('-t', '--targetnode', type=str, default="2",
+parser.add_argument('-tn', '--targetnode', type=str, default="2",
                     help='Name of the target node')
+parser.add_argument('-n2g', '--nodes_to_gen', type=int, default=10,
+                    help='PRM nodes to generate')
+parser.add_argument('-mxl', '--maxlinks', type=int, default=3,
+                    help='Max Links to add to a PRM node')
 parser.add_argument('-s', '--scene', type=str, default="PRM Planner",
                     help='Name of the scene')
 parser.add_argument('-d', '--directory', type=str, default="planning_coursera",
@@ -35,8 +39,6 @@ parser.add_argument('-ns', '--noseed', action='store_true',
                     help='Do not use a random seed')
 parser.add_argument('-seed', '--seed', type=int, default=1234,
                     help='Random seed value')
-parser.add_argument('-n2g', '--nodes_to_gen', type=int, default=10,
-                    help='PRM nodes to generate')
 
 
 args = parser.parse_args()
@@ -46,6 +48,7 @@ fnameedges = args.edges
 fnameobstacles = args.obstacles
 firstnode = args.firstnode
 targetnode = args.targetnode
+maxlinks = args.maxlinks
 astarscene = args.scene
 dname = args.directory
 finplot = args.finplot
@@ -55,8 +58,30 @@ no_seed = args.noseed
 seed = args.seed
 nodes_to_gen = args.nodes_to_gen
 
+if verbosity > 0:
+    print("prm.py args:")
+    print("    fnamenodes:", fnamenodes)
+    print("    fnameedges:", fnameedges)
+    print("    fnameobstacles:", fnameobstacles)
+    print("    firstnode:", firstnode)
+    print("    targetnode:", targetnode)
+
+    print("    maxlinks:", maxlinks)
+    print("    nodes_to_gen:", nodes_to_gen)
+
+    print("    astarscene:", astarscene)
+    print("    dname:", dname)
+    print("    finplot:", finplot)
+    print("    stepplot:", stepplot)
+    print("    verbosity:", verbosity)
+    print("    no_seed:", no_seed)
+    print("    seed:", seed)
+
 
 class PrmGen:
+    """
+    Class to generate PRM nodes and edges
+    """
 
     nodedict: dict[str, dict[str, float]] = {}
     nodestat: dict[str, str] = {}
@@ -66,7 +91,7 @@ class PrmGen:
     obst: list[dict[str, float]] = []
 
     def __init__(self, nodetxt: list[str], edgetxt: list[str], obsttxt: list[str] = None,
-                 verbosity: int = 0, noseed: bool = False, seed: int = 1234):
+                 verbosity: int = 1, noseed: bool = False, seed: int = 1234):
         self.verbosity = verbosity
         if self.verbosity > 0:
             print(f"AStar.__init__")
@@ -138,7 +163,9 @@ class PrmGen:
                 if len(line) <= 1:
                     continue
                 x, y, diam = line.split(",")
-                self.obst.append({"x": float(x),
+                id = len(self.obst)
+                self.obst.append({"id":str(id),
+                                  "x": float(x),
                                   "y": float(y),
                                   "diam": float(diam)})
 
@@ -147,9 +174,11 @@ class PrmGen:
 
         if verbosity > 0:
             if no_seed:
-                print(f"Random seed not used") 
+                print(f"Random seed not used")
             else:
                 print(f"Random seed set to {seed}")
+
+        self.maxlinks = 3
 
         if self.verbosity > 1:
             print("obst", self.obst)
@@ -165,47 +194,126 @@ class PrmGen:
         else:
             return []
 
-    def GenNodesAndEdges(self, n: int, x0: float, y0: float, x1: float, y1: float):
+    def GenNodesAndEdges(self, n: int, x0: float, y0: float, x1: float, y1: float, maxlinks: int = 3):
         """
         Generate n additional nodes in the rectangle defined by x0,y0,x1,y1
         """
+        self.maxlinks = maxlinks
         org_node_ids = list(self.nodedict.keys())
         gen_node_ids = []
-        startid = len(self.nodedict)+1
-        for i in range(n):
-            id = f"{startid+i}"
+        # startid = len(self.nodedict)+1
+        while len(gen_node_ids) < n:
+            i = len(gen_node_ids)
+            # id = f"{startid+i}"
+            id = f"_{i}"
             x = random.uniform(x0, x1)
             y = random.uniform(y0, y1)
+
+            # Don't generate nodes inside obstacles
+            isclear = True
+            for o in self.obst:
+                d2o = self.DistToObst(x, y, o)
+                if d2o < o["diam"]:
+                    if self.verbosity > 3:
+                        print(f"Candidate Node {id} x:{x:.3f} y:{y:.3f}  is inside obstacle {o} dist:{d2o:.3f}")
+                    isclear = False
+                    break
+            if not isclear:
+                continue
+
             self.nodedict[id] = {"x": x, "y": y, "id": id, "cost": 0, "tent_tot_cost": 0}
             self.nbr[id] = []
             self.nodestat[id] = "unvisited"
+            if self.verbosity > 3:
+                print(f"Generated node {id} x:{x:.3f} y:{y:.3f}")
             gen_node_ids.append(id)
 
-        for i1, id_i in enumerate(gen_node_ids):
-            for j in range(i1+1, len(gen_node_ids)):
-                id_j = gen_node_ids[j]
-                if self.LineOfSight(id_i, id_j):
-                    self.nbr[id_i].append(id_j)
-                    self.nbr[id_j].append(id_i)
-                    self.edgecost[f"{id_i}:{id_j}"] = self.Dist(id_i, id_j)
-                    self.edgecost[f"{id_j}:{id_i}"] = self.Dist(id_j, id_i)
+        for i, id_i in enumerate(gen_node_ids):
+            todo = org_node_ids.copy()
+            todo.extend(gen_node_ids[i+1:])
+            self.TryConnectListClosestK(id_i, todo, maxlinks=self.maxlinks)
 
-        for id_i in gen_node_ids:
-            for id_j in org_node_ids:
-                if self.LineOfSight(id_i, id_j):
-                    self.nbr[id_i].append(id_j)
-                    self.nbr[id_j].append(id_i)
-                    self.edgecost[f"{id_i}:{id_j}"] = self.Dist(id_i, id_j)
-                    self.edgecost[f"{id_j}:{id_i}"] = self.Dist(id_j, id_i)
+        # for id_i in gen_node_ids:
+        #     for id_j in org_node_ids:
+        #         self.TryConnect(id_i, id_j)
+
+        # for i1, id_i in enumerate(gen_node_ids):
+        #     for j in range(i1+1, len(gen_node_ids)):
+        #         id_j = gen_node_ids[j]
+        #         self.TryConnect(id_i, id_j)
+
+        print("org_node_ids:", org_node_ids)
+        print("gen_node_ids:", gen_node_ids)
+
+    def TryConnectListClosestK(self, id_i: str, id_list: list[str], maxlinks: int = 2) -> bool:
+        """
+        Try to connect node id_i to the closest nodes in id_list
+        """
+        nlinks = 0
+        while len(id_list) > 0:
+            id_j = self.FindClosestNodeInList(id_i, id_list)
+            id_list.remove(id_j)
+            if self.TryConnect(id_i, id_j):
+                nlinks += 1
+                if nlinks >= maxlinks:
+                    return True
+
+        return False
+
+    def FindClosestNodeInList(self, id: str, id_list: list[str]) -> str:
+        """
+        Find the node in id_list that is closest to node id
+        """
+        mindist = 1e9
+        minid = ""
+        # brute force search for now
+        # a more sophisticated search would
+        # - set up lists sorting points according to their position per dimension before this is called
+        # - and then use a binary search to find the closest point
+        for id_j in id_list:
+            dist = self.Dist(id, id_j)
+            if dist < mindist:
+                mindist = dist
+                minid = id_j
+        return minid
+
+    def TryConnect(self, id_i: str, id_j: str) -> bool:
+        """
+        Try to connect nodes id_i and id_j
+        """
+        if id_i == id_j:
+            print(f"TryConnect Warning: tried to connect node to itself: {id_i}")
+            return False
+        if self.LineOfSight(id_i, id_j):
+            edgeid1 = f"{id_i}:{id_j}"
+            if edgeid1 in self.edgecost:
+                return True
+            self.nbr[id_i].append(id_j)
+            self.nbr[id_j].append(id_i)
+            self.edgecost[f"{id_i}:{id_j}"] = self.Dist(id_i, id_j)
+            self.edgecost[f"{id_j}:{id_i}"] = self.Dist(id_j, id_i)
+            return True
+        else:
+            return False
+
+    def DistToObst(self, x: float, y: float, o: dict) -> float:
+        """
+        Distance from point (x,y) to center of obstacle o
+        """
+        xo = o["x"]
+        yo = o["y"]
+        return math.sqrt((x-xo)**2 + (y-yo)**2)
 
     def LineOfSight(self, n1: str, n2: str) -> bool:
         """
         Check if the line between nodes n1 and n2 is clear of obstacles
         """
-        x1 = self.nodedict[n1]["x"]
-        y1 = self.nodedict[n1]["y"]
-        x2 = self.nodedict[n2]["x"]
-        y2 = self.nodedict[n2]["y"]
+        nn1 = self.nodedict[n1]
+        nn2 = self.nodedict[n2]
+        x1 = nn1["x"]
+        y1 = nn1["y"]
+        x2 = nn2["x"]
+        y2 = nn2["y"]
         for o in self.obst:
             xo = o["x"]
             yo = o["y"]
@@ -217,7 +325,8 @@ class PrmGen:
     def LineCircleIntersect0(self, x1: float, y1: float, x2: float, y2: float, xo: float, yo: float, diam: float) -> bool:
         """
         Check if the line between (x1,y1) and (x2,y2) intersects the circle at (xo,yo) with diameter diam
-        Obviously wrong since it isn't using the center of the circle idiot
+        Co-pilot obviously got this very wrong since it isn't using the center of the circle
+        Don't use this obviously, leaving it in for my own amusement
         """
         # https://stackoverflow.com/questions/1073336/circle-line-segment-collision-detection-algorithm
         dx = x2 - x1
@@ -242,10 +351,12 @@ class PrmGen:
         """
         Return the distance between nodes n1 and n2
         """
-        x1 = self.nodedict[n1]["x"]
-        y1 = self.nodedict[n1]["y"]
-        x2 = self.nodedict[n2]["x"]
-        y2 = self.nodedict[n2]["y"]
+        nn1 = self.nodedict[n1]
+        nn2 = self.nodedict[n2]
+        x1 = nn1["x"]
+        y1 = nn1["y"]
+        x2 = nn2["x"]
+        y2 = nn2["y"]
         return math.sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1))
 
     def ExtractNodesIntoList(self) -> list[str]:
@@ -254,8 +365,9 @@ class PrmGen:
         """
         rv = []
         for n in self.nodedict:
-            x = self.nodedict[n]["x"]
-            y = self.nodedict[n]["y"]
+            nn = self.nodedict[n]
+            x = nn["x"]
+            y = nn["y"]
             rv.append(f"{n},{x:.3f},{y:.3f},100")
         return rv
 
@@ -278,7 +390,7 @@ def main():
 
     prma = PrmGen([fp_nodename], [fp_edgename], [fp_obstacles], 
                   verbosity=verbosity, noseed=no_seed, seed=seed)
-    prma.GenNodesAndEdges(nodes_to_gen, -0.5, -0.5, 0.5, 0.5)
+    prma.GenNodesAndEdges(nodes_to_gen, -0.5, -0.5, 0.5, 0.5, maxlinks)
 
     nodetxt = prma.ExtractNodesIntoList()
     edgetxt = prma.ExtractEdgesIntoList()

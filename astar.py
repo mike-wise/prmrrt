@@ -16,7 +16,7 @@ class AStar:
 
     verbosity: int = 0
 
-    def __init__(self, nodetxt: list[str], edgetxt: list[str], obsttxt: list[str]=None, verbosity: int = 0):
+    def __init__(self, nodetxt: list[str], edgetxt: list[str], obsttxt: list[str] = None, verbosity: int = 0):
         self.verbosity = verbosity
         if self.verbosity > 1:
             print(f"AStar.__init__")
@@ -37,7 +37,7 @@ class AStar:
                 print(f"There are {len(obsttxt)} obstacle lines")
             else:
                 print(f"No obstacle file")
-           
+
         for line in nodetxt:
             if line[0] == "#":
                 continue
@@ -89,7 +89,9 @@ class AStar:
                 if len(line) <= 1:
                     continue
                 x, y, diam = line.split(",")
-                self.obst.append({"x": float(x),
+                id = len(self.obst)
+                self.obst.append({"id": str(id),
+                                  "x": float(x),
                                   "y": float(y),
                                   "diam": float(diam)})
 
@@ -165,6 +167,17 @@ class AStar:
         ax.set_ylim(ymin-bordery, ymax+bordery)
         self.scale = (xmax-xmin) / 2
         ax.grid(True, which='both')
+
+        # Now add the obstacles
+        for o in self.obst:
+            x = o["x"]
+            y = o["y"]
+            diam = o["diam"]
+            ax.add_patch(patches.Circle((x, y), diam/2, color='grey'))
+            ax.text(x, y, o["id"],
+                    fontsize=10, horizontalalignment='center', verticalalignment='center', color='white')
+
+        # Now add the nodes
         for n in self.nodedict.keys():
             x = self.nodedict[n]["x"]
             y = self.nodedict[n]["y"]
@@ -190,11 +203,7 @@ class AStar:
             ax.text(xmid, ymid, f"{self.edgecost[e]:.3f}",
                     fontsize=10, horizontalalignment='center', verticalalignment='center')
 
-        for o in self.obst:
-            x = o["x"]
-            y = o["y"]
-            diam = o["diam"]
-            ax.add_patch(patches.Circle((x, y), diam/2, color='grey'))
+
             
         plt.draw()
 
