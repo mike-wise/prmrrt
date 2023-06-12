@@ -2,7 +2,6 @@ import numpy
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
-# f l a k e 8 : noqa
 
 
 class AStar:
@@ -203,8 +202,6 @@ class AStar:
             ax.text(xmid, ymid, f"{self.edgecost[e]:.3f}",
                     fontsize=10, horizontalalignment='center', verticalalignment='center')
 
-
-            
         plt.draw()
 
     def HightlightNodesInPath(self, path: list[str], cost, actionline: str):
@@ -221,7 +218,7 @@ class AStar:
 
     fig = None
     iplot: int = 1
-    nrows: int = 3
+    nrows: int = 4
     ncols: int = 6
 
     def SetupPlot(self, tit: str):
@@ -255,6 +252,18 @@ class AStar:
         if self.verbosity > 2:
             print(f"added {n} to openlist:{self.openlist} {ntentcost}")
 
+        if self.verbosity > 3:
+            ## print out values anc check that they are in sorted order
+            print(f"AddNodeToOpenList after adding {n}")
+            pval = -1
+            for idx, id in enumerate(self.openlist):
+                nd = self.nodedict[id]
+                cval = nd["tent_tot_cost"]
+                if cval < pval:
+                    print(f"Warning in AddNodeToOpenlist: {id} {cval} < {pval}")
+                print(f'     {idx} openlist {id} ttcost:{cval}')
+                pval = cval
+
     def AddNodeToClosedList(self, n: str):
         self.closedlist.append(n)
         self.nodestat[n] = "closed"
@@ -269,20 +278,25 @@ class AStar:
             n = self.parentnode[n]
         return rv
 
+    fastMethod = True
+
     def GetSeeminglyClosestNodeToTarget(self) -> str:
         # global nodedict
-        if len(self.openlist) == 1:
+        if self.fastMethod:
             return self.openlist[0]
-        mincost = 1e6
-        minnode: str = "None"
-        for n in self.openlist:
-            if "tent_tot_cost" not in self.nodedict[n].keys():
-                continue
-            ttcost = self.nodedict[n]["tent_tot_cost"]
-            if ttcost < mincost:
-                mincost = ttcost
-                minnode = n
-        return minnode
+        else:
+            if len(self.openlist) == 1:
+                return self.openlist[0]
+            mincost = 1e6
+            minnode: str = "None"
+            for n in self.openlist:
+                if "tent_tot_cost" not in self.nodedict[n].keys():
+                    continue
+                ttcost = self.nodedict[n]["tent_tot_cost"]
+                if ttcost < mincost:
+                    mincost = ttcost
+                    minnode = n
+            return minnode
 
     def AssignParent(self, n: str, parent: str, goal: str):
         # global nodedict, parentnode
